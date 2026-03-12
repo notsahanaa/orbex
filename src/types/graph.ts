@@ -1,0 +1,72 @@
+import { EntityType } from "@/lib/extraction/schema";
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  type: EntityType;
+  description: string | null;
+  is_primary: boolean;
+  mention_count: number;
+  sources: string[]; // Domain names of sources where this entity was mentioned
+  updated_at: string | null; // Last time this entity was updated (new mention added)
+}
+
+// Detailed node info fetched when a node is selected
+export interface NodeSource {
+  article_id: string;
+  title: string;
+  url: string;
+  site_name: string | null;
+  published_at: string;
+  context: string | null; // Extracted content snippet for this entity
+}
+
+export interface NodeDetails {
+  id: string;
+  name: string;
+  type: EntityType;
+  description: string | null;
+  is_primary: boolean;
+  mention_count: number;
+  connected_count: number;
+  updated_at: string | null;
+  sources: NodeSource[];
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  relationship_type: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+  availableSources: string[]; // All unique source domains across all entities
+}
+
+export const ENTITY_COLORS: Record<EntityType, string> = {
+  paradigm: "#8B5CF6", // Purple
+  tool: "#10B981", // Emerald
+  company: "#3B82F6", // Blue
+  case_study: "#6B7280", // Gray
+  event: "#6B7280", // Gray
+};
+
+export const ENTITY_LABELS: Record<EntityType, string> = {
+  paradigm: "Paradigm",
+  tool: "Tool",
+  company: "Company",
+  case_study: "Case Study",
+  event: "Event",
+};
+
+/**
+ * Calculate node size based on primary status and mention count.
+ * Primary nodes are larger, and size scales with mentions.
+ */
+export function getNodeSize(node: GraphNode): number {
+  const baseSize = node.is_primary ? 8 : 4;
+  const mentionScale = 1 + Math.log10(Math.max(1, node.mention_count));
+  return baseSize * mentionScale;
+}

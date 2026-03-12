@@ -1,0 +1,211 @@
+@import "tailwindcss";
+
+/* ============================================
+   ORBEX DESIGN SYSTEM
+   Modern, dark, robotic aesthetic
+   ============================================ */
+
+@theme {
+  /* Background Colors */
+  --color-bg-primary: #000000;
+  --color-bg-secondary: #0A0A0A;
+  --color-bg-tertiary: #111111;
+
+  /* Border Colors */
+  --color-border-subtle: #1A1A1A;
+  --color-border-default: #262626;
+  --color-border-hover: #333333;
+
+  /* Text Colors */
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #A1A1A1;
+  --color-text-tertiary: #666666;
+
+  /* Functional */
+  --color-error: #EF4444;
+
+  /* Fonts - uses Next.js font variables */
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), 'Berkeley Mono', ui-monospace, monospace;
+}
+
+/* Base Styles */
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings use Inter */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+h1 { font-size: 3rem; line-height: 1.1; }
+h2 { font-size: 2rem; line-height: 1.2; }
+h3 { font-size: 1.5rem; line-height: 1.3; font-weight: 500; }
+h4 { font-size: 1.125rem; line-height: 1.4; font-weight: 500; }
+
+/* Links */
+a {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+a:hover {
+  color: var(--color-text-primary);
+}
+
+/* Input base styles */
+input, textarea {
+  font-family: var(--font-mono);
+}
+
+/* Selection */
+::selection {
+  background-color: #333333;
+  color: var(--color-text-primary);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-hover);
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+/* Dot Grid Background */
+.bg-dot-grid {
+  background-image: radial-gradient(var(--color-border-subtle) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Line Grid Background */
+.bg-line-grid {
+  background-image:
+    linear-gradient(var(--color-border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border-subtle) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Card Style */
+.card {
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+}
+
+/* Input Style */
+.input {
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  transition: border-color 150ms ease;
+  width: 100%;
+}
+
+.input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-border-hover);
+}
+
+/* Button Styles */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  border-radius: 6px;
+  transition: all 150ms ease;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background-color: transparent;
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-primary);
+}
+
+.btn-primary:hover {
+  background-color: var(--color-bg-tertiary);
+  border-color: var(--color-border-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-solid {
+  background-color: var(--color-text-primary);
+  border: 1px solid var(--color-text-primary);
+  color: var(--color-bg-primary);
+}
+
+.btn-solid:hover {
+  background-color: var(--color-text-secondary);
+  border-color: var(--color-text-secondary);
+}
+
+/* Label */
+.label {
+  display: block;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Error message */
+.error-message {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: var(--color-error);
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+/* Success message */
+.success-message {
+  background-color: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: #22C55E;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+}

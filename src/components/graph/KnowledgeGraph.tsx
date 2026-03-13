@@ -213,6 +213,7 @@ export default function KnowledgeGraph() {
           <GraphCanvas
             nodes={filteredNodes}
             links={filteredLinks}
+            maxDepth={graphData?.max_depth ?? 3}
             selectedNodeId={selectedNode?.id || null}
             highlightedNodeIds={highlightedNodeIds}
             onNodeClick={handleNodeClick}

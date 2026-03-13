@@ -7,6 +7,7 @@ import { GraphNode, GraphLink, ENTITY_COLORS, getNodeSize } from "@/types/graph"
 interface GraphCanvasProps {
   nodes: GraphNode[];
   links: GraphLink[];
+  maxDepth: number;
   selectedNodeId: string | null;
   highlightedNodeIds: Set<string>;
   onNodeClick: (node: GraphNode) => void;
@@ -24,6 +25,7 @@ interface PositionedNode extends GraphNode {
 export default function GraphCanvas({
   nodes,
   links,
+  maxDepth,
   selectedNodeId,
   highlightedNodeIds,
   onNodeClick,
@@ -115,7 +117,7 @@ export default function GraphCanvas({
     (node: PositionedNode, ctx: CanvasRenderingContext2D) => {
       if (node.x === undefined || node.y === undefined) return;
 
-      const size = getNodeSize(node);
+      const size = getNodeSize(node, maxDepth);
       const color = getNodeColor(node);
       const opacity = getNodeOpacity(node);
 
@@ -126,7 +128,8 @@ export default function GraphCanvas({
       ctx.fill();
 
       const label = node.name;
-      const fontSize = node.is_primary ? 4 : 3;
+      // Font size scales with node depth: root nodes get larger text
+      const fontSize = Math.max(3, 4 - node.hierarchy_depth * 0.3);
       ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
@@ -136,7 +139,7 @@ export default function GraphCanvas({
 
       ctx.globalAlpha = 1;
     },
-    [getNodeColor, getNodeOpacity]
+    [getNodeColor, getNodeOpacity, maxDepth]
   );
 
   const handleNodeClick = useCallback(
@@ -161,7 +164,7 @@ export default function GraphCanvas({
         nodeCanvasObject={nodeCanvasObject}
         nodePointerAreaPaint={(node: PositionedNode, color, ctx) => {
           if (node.x === undefined || node.y === undefined) return;
-          const size = getNodeSize(node);
+          const size = getNodeSize(node, maxDepth);
           ctx.beginPath();
           ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI);
           ctx.fillStyle = color;

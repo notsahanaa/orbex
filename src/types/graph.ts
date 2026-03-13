@@ -9,6 +9,7 @@ export interface GraphNode {
   mention_count: number;
   sources: string[]; // Domain names of sources where this entity was mentioned
   updated_at: string | null; // Last time this entity was updated (new mention added)
+  hierarchy_depth: number; // 0 = root, higher = deeper in the hierarchy
 }
 
 // Detailed node info fetched when a node is selected
@@ -43,6 +44,7 @@ export interface GraphData {
   nodes: GraphNode[];
   links: GraphLink[];
   availableSources: string[]; // All unique source domains across all entities
+  max_depth: number; // Maximum hierarchy depth in the graph
 }
 
 export const ENTITY_COLORS: Record<EntityType, string> = {
@@ -62,11 +64,14 @@ export const ENTITY_LABELS: Record<EntityType, string> = {
 };
 
 /**
- * Calculate node size based on primary status and mention count.
- * Primary nodes are larger, and size scales with mentions.
+ * Calculate node size based on hierarchy depth and mention count.
+ * Root nodes (depth 0) are largest, deeper nodes are progressively smaller.
  */
-export function getNodeSize(node: GraphNode): number {
-  const baseSize = node.is_primary ? 8 : 4;
-  const mentionScale = 1 + Math.log10(Math.max(1, node.mention_count));
-  return baseSize * mentionScale;
+export function getNodeSize(node: GraphNode, maxDepth: number = 3): number {
+  const baseSize = 6;
+  // Depth-based: roots are larger, deeper nodes are smaller
+  const depthMultiplier = Math.pow(1.5, Math.max(0, maxDepth - node.hierarchy_depth));
+  // Gentle mention scaling
+  const mentionScale = 1 + Math.log10(Math.max(1, node.mention_count)) * 0.3;
+  return baseSize * depthMultiplier * mentionScale;
 }

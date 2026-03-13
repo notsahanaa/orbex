@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { GraphData, GraphNode, GraphLink } from "@/types/graph";
 import { EntityType } from "@/lib/extraction/schema";
+import { getEntityDepth } from "@/lib/extraction/hierarchy";
 
 /**
  * Extract domain from a URL (e.g., "https://a16z.com/podcast/..." -> "a16z.com")
@@ -80,6 +81,15 @@ export async function GET(request: NextRequest) {
       // Don't fail - just proceed without source data
     }
 
+    // Calculate hierarchy depth for each entity
+    const entityDepths = new Map<string, number>();
+    let maxDepth = 0;
+    for (const entity of entities || []) {
+      const depth = await getEntityDepth(supabase, entity.id, user.id);
+      entityDepths.set(entity.id, depth);
+      maxDepth = Math.max(maxDepth, depth);
+    }
+
     // Build a map of entity_id -> source domains and latest update time
     const entitySources = new Map<string, Set<string>>();
     const entityUpdatedAt = new Map<string, string>();
@@ -117,6 +127,7 @@ export async function GET(request: NextRequest) {
       mention_count: e.mention_count,
       sources: Array.from(entitySources.get(e.id) || []),
       updated_at: entityUpdatedAt.get(e.id) || null,
+      hierarchy_depth: entityDepths.get(e.id) ?? 0,
     }));
 
     const links: GraphLink[] = (relationships || []).map((r) => ({
@@ -129,6 +140,7 @@ export async function GET(request: NextRequest) {
       nodes,
       links,
       availableSources: Array.from(allSources).sort(),
+      max_depth: maxDepth,
     };
 
     return NextResponse.json({ success: true, data: graphData });

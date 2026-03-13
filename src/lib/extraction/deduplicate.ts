@@ -1,11 +1,29 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { ExtractedEntity, DbEntity, EntityType } from "./schema";
 import { normalizeEntityName, areNamesSimilar } from "./normalize";
+import { wouldCreateCycle, isParentOfRelationship } from "./hierarchy";
+
+const DEFAULT_CONFIDENCE_THRESHOLD = 0.6;
 
 interface DeduplicationResult {
   entityId: string;
   isNew: boolean;
   merged: boolean;
+}
+
+/**
+ * Filter entities by confidence threshold.
+ * Removes entities with confidence below the threshold.
+ */
+export function filterByConfidence(
+  entities: ExtractedEntity[],
+  threshold: number = DEFAULT_CONFIDENCE_THRESHOLD
+): { filtered: ExtractedEntity[]; removed: number } {
+  const filtered = entities.filter((e) => e.confidence >= threshold);
+  return {
+    filtered,
+    removed: entities.length - filtered.length,
+  };
 }
 
 /**
@@ -138,6 +156,7 @@ export async function processExtractedEntities(
 /**
  * Create relationships between entities.
  * Filters out invalid Secondary ↔ Secondary connections.
+ * parent_of relationships bypass the secondary↔secondary filter and include cycle validation.
  */
 export async function createRelationships(
   supabase: SupabaseClient,
@@ -148,13 +167,17 @@ export async function createRelationships(
   }>,
   nameToId: Map<string, string>,
   articleId: string,
-  entities: ExtractedEntity[]
-): Promise<void> {
+  entities: ExtractedEntity[],
+  userId: string
+): Promise<{ parentOfCreated: number; cyclesRejected: number }> {
   // Build a map of entity names to their is_primary status
   const entityPrimaryMap = new Map<string, boolean>();
   for (const entity of entities) {
     entityPrimaryMap.set(entity.name, entity.is_primary);
   }
+
+  let parentOfCreated = 0;
+  let cyclesRejected = 0;
 
   for (const rel of relationships) {
     const sourceId = nameToId.get(rel.source_name);
@@ -165,7 +188,40 @@ export async function createRelationships(
       continue;
     }
 
-    // Filter out Secondary ↔ Secondary connections
+    // Handle parent_of relationships specially
+    if (isParentOfRelationship(rel.relationship_type)) {
+      // Check for cycles before inserting
+      const wouldCycle = await wouldCreateCycle(supabase, sourceId, targetId, userId);
+
+      if (wouldCycle) {
+        console.log(
+          `Rejecting cycle-creating parent_of: ${rel.source_name} → ${rel.target_name}`
+        );
+        cyclesRejected++;
+        continue;
+      }
+
+      // parent_of relationships bypass the secondary↔secondary filter
+      const { error } = await supabase.from("relationships").upsert(
+        {
+          source_entity_id: sourceId,
+          target_entity_id: targetId,
+          relationship_type: rel.relationship_type,
+          article_id: articleId,
+        },
+        {
+          onConflict: "source_entity_id,target_entity_id,relationship_type",
+          ignoreDuplicates: true,
+        }
+      );
+
+      if (!error) {
+        parentOfCreated++;
+      }
+      continue;
+    }
+
+    // For non-parent_of relationships, apply the secondary↔secondary filter
     const sourceIsPrimary = entityPrimaryMap.get(rel.source_name) ?? false;
     const targetIsPrimary = entityPrimaryMap.get(rel.target_name) ?? false;
 
@@ -190,6 +246,8 @@ export async function createRelationships(
       }
     );
   }
+
+  return { parentOfCreated, cyclesRejected };
 }
 
 /**

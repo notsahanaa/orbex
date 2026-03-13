@@ -121,10 +121,83 @@ Primary nodes serve as hubs that cluster related content across articles.
 
 ---
 
+### Phase 2: Two-Pass Entity Extraction
+
+The extraction pipeline uses a two-pass approach inspired by how a human would take notes for a mindmap:
+
+```
+Article Input
+    ↓
+┌─────────────────────────────────────────┐
+│ PASS 1: OUTLINE (~$0.01)                │
+│ - Identify main topics (3-7)            │
+│ - List 2-3 key points per topic         │
+│ - Mark relevance (high/medium)          │
+│ - Identify primary focus                │
+└─────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────┐
+│ SMART TRUNCATION (if >15k chars)        │
+│ - Keep intro (1500 chars)               │
+│ - Keep conclusion (1000 chars)          │
+│ - Keep full "high" relevance sections   │
+│ - Trim "medium" to first paragraph      │
+└─────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────┐
+│ PASS 2: EXTRACTION (~$0.02)             │
+│ - Extract entities per topic            │
+│ - Build hierarchical relationships      │
+│ - Confidence scores                     │
+└─────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────┐
+│ POST-PROCESSING                         │
+│ - Filter confidence < 0.6               │
+│ - Deduplicate against existing          │
+│ - Create relationships                  │
+│ - Recalculate is_primary for hierarchy  │
+└─────────────────────────────────────────┘
+```
+
+**Total cost: ~$0.03/article**
+
+#### Extraction Philosophy
+
+> "If a human had to extract the article's key points and make it into a mindmap with details, how would they do it?"
+
+- Extract every major topic explored to **reasonable depth**
+- Could be 1 entity from a focused article, or 10 from a broad one
+- The test: "Would a human taking notes include this?"
+- Organize into a hierarchical mindmap with connections
+
+#### Data Flow
+
+1. **Pass 1 Output (ArticleOutline):**
+   - `article_type`: deep_dive | survey | news | tutorial | opinion
+   - `main_topics`: Array of topics with key points and relevance markers
+   - `primary_focus`: The main concept/entity the article is about
+
+2. **Pass 2 Output (ExtractionResult):**
+   - `entities`: Array with name, type, description, confidence, is_primary, source_topic
+   - `relationships`: Array with source_name, target_name, relationship_type
+
+---
+
 ### Build Log
 
 #### Step 1: Database Schema
-Status: In Progress
+Status: Complete
+
+#### Step 2: Two-Pass Extraction Pipeline
+Status: Complete
+
+Files:
+- `src/lib/extraction/schema.ts` - ArticleOutline type, source_topic on entities
+- `src/lib/extraction/extract.ts` - createOutline() + extractEntities() with outline context
+- `src/lib/extraction/truncate.ts` - smartTruncate() using outline relevance
+- `src/lib/extraction/deduplicate.ts` - filterByConfidence() function
+- `src/app/api/extract/route.ts` - Two-pass orchestration
 
 ---
 
@@ -157,3 +230,88 @@ This section tracks decisions made for MVP that we may want to upgrade later.
 - Ready to plug in Voyage or OpenAI when semantic features are needed
 
 **Upgrade Trigger:** When we see duplicate entities that text matching misses, or when we want "related entities" suggestions
+
+### 2. Two-Pass vs Single-Pass Extraction
+
+**Date:** 2026-03-13
+
+**Context:** Extraction quality depends on understanding article structure. A single prompt tries to do everything at once.
+
+**Options Evaluated:**
+
+| Approach | Cost | Quality | Debuggability |
+|----------|------|---------|---------------|
+| Single prompt | ~$0.02 | Depends on prompt complexity | Hard |
+| Two-pass | ~$0.03 | Better - outline provides context | Good |
+| Multi-pass (3+) | ~$0.05+ | Highest but overkill | Best |
+
+**Decision:** Two-pass
+- Pass 1 creates an outline that acts as a checkpoint
+- Pass 2 uses outline context for better extraction
+- The marginal cost increase (~$0.01) is worth the quality and debuggability gains
+
+**Upgrade Trigger:** If we need even more structured extraction (e.g., separate passes for relationships vs entities)
+
+### 3. Outline Depth
+
+**Date:** 2026-03-13
+
+**Context:** How detailed should the Pass 1 outline be?
+
+**Options Evaluated:**
+
+| Depth | Cost | Context for Extraction |
+|-------|------|------------------------|
+| Topic-level only | ~$0.005 | Minimal |
+| Topic + key points | ~$0.01 | Good balance |
+| Structured summary | ~$0.015 | Overkill, duplicates extraction |
+
+**Decision:** Topic + key points
+- Captures structure without duplicating extraction work
+- Provides enough context for smart truncation decisions
+- Key points help the extraction prompt stay focused
+
+**Upgrade Trigger:** If we find extraction missing nuance that a more detailed outline would catch
+
+### 4. Long Article Handling
+
+**Date:** 2026-03-13
+
+**Context:** Articles >15k chars need truncation to fit token limits.
+
+**Options Evaluated:**
+
+| Approach | Complexity | Completeness |
+|----------|------------|--------------|
+| Increase limit | Simple | May miss structure |
+| Chunk and merge | Complex | Complete but dedup issues |
+| Smart truncation | Medium | Good - outline guides what to keep |
+
+**Decision:** Smart truncation using outline relevance markers
+- Preserves intro (1500 chars) and conclusion (1000 chars)
+- Keeps full text for "high" relevance sections
+- Trims "medium" relevance to first paragraph
+- Skips sections that don't match any outline topic
+
+**Upgrade Trigger:** If we see important entities being missed from truncated sections
+
+### 5. Confidence Measurement
+
+**Date:** 2026-03-13
+
+**Context:** How to determine if an extracted entity is worth keeping?
+
+**Options Evaluated:**
+
+| Method | Consistency | Accuracy |
+|--------|-------------|----------|
+| LLM self-reported | Low | Unknown |
+| Heuristic-based | High | Objective but indirect |
+| Hybrid | Medium | Best of both |
+
+**Decision:** LLM self-reported with 0.6 threshold
+- Simple to implement
+- Provides a mechanism to filter noise
+- Threshold can be tuned based on observed quality
+
+**Upgrade Trigger:** If we see inconsistent confidence scores or quality issues with the 0.6 threshold

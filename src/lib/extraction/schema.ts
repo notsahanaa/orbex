@@ -1,5 +1,39 @@
 import { z } from "zod";
 
+// ============================================
+// Pass 1: Article Outline Schema
+// ============================================
+
+export const ArticleType = z.enum([
+  "deep_dive",
+  "survey",
+  "news",
+  "tutorial",
+  "opinion",
+]);
+
+export type ArticleType = z.infer<typeof ArticleType>;
+
+export const OutlineTopic = z.object({
+  topic: z.string().describe("Main topic heading"),
+  key_points: z.array(z.string()).describe("2-3 key points discussed under this topic"),
+  relevance: z.enum(["high", "medium"]).describe("high = central to article, medium = supporting"),
+});
+
+export type OutlineTopic = z.infer<typeof OutlineTopic>;
+
+export const ArticleOutline = z.object({
+  article_type: ArticleType,
+  main_topics: z.array(OutlineTopic),
+  primary_focus: z.string().describe("The main concept/entity the article is about"),
+});
+
+export type ArticleOutline = z.infer<typeof ArticleOutline>;
+
+// ============================================
+// Pass 2: Entity Extraction Schema
+// ============================================
+
 export const EntityType = z.enum([
   "paradigm",
   "tool",
@@ -16,6 +50,7 @@ export const ExtractedEntity = z.object({
   description: z.string().describe("Detailed description with context and quotes from the article"),
   confidence: z.number().min(0).max(1).describe("Confidence score 0-1"),
   is_primary: z.boolean().describe("True for paradigm/tool/company, false for case_study/event"),
+  source_topic: z.string().optional().describe("Which outline topic this entity came from"),
 });
 
 export type ExtractedEntity = z.infer<typeof ExtractedEntity>;

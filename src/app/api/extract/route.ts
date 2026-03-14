@@ -1,14 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
-import { createOutline, extractEntities } from "@/lib/extraction/extract";
-import {
-  processExtractedEntities,
-  createRelationships,
-  createEntityMentions,
-  filterByConfidence,
-} from "@/lib/extraction/deduplicate";
-import { recalculateIsPrimary } from "@/lib/extraction/hierarchy";
-import { smartTruncate } from "@/lib/extraction/truncate";
+import { processArticleExtraction } from "@/lib/ingestion/processArticle";
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,20 +24,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch the article
-    const { data: article, error: fetchError } = await supabase
+    // Check if article exists and already processed (for early return)
+    const { data: article } = await supabase
       .from("articles")
-      .select("*")
+      .select("processed_at")
       .eq("id", articleId)
       .eq("user_id", user.id)
       .single();
 
-    if (fetchError || !article) {
-      return NextResponse.json({ error: "Article not found" }, { status: 404 });
-    }
-
-    // Check if already processed
-    if (article.processed_at) {
+    if (article?.processed_at) {
       return NextResponse.json({
         success: true,
         message: "Article already processed",
@@ -53,85 +40,27 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ============================================
-    // Two-Pass Extraction Pipeline
-    // ============================================
-
-    // Pass 1: Create outline (~$0.01)
-    const outline = await createOutline(article.content, article.title);
-
-    // Smart truncation for long articles (>15k chars)
-    const truncatedContent =
-      article.content.length > 15000
-        ? smartTruncate(article.content, outline)
-        : article.content;
-
-    // Pass 2: Extract entities using outline context (~$0.02)
-    const extractionResult = await extractEntities(
-      truncatedContent,
-      article.title,
-      outline
-    );
-
-    // Post-processing: Filter low-confidence entities
-    const { filtered: filteredEntities, removed: lowConfidenceRemoved } =
-      filterByConfidence(extractionResult.entities);
-
-    // Process entities (dedup and save)
-    const nameToId = await processExtractedEntities(
-      supabase,
-      filteredEntities,
-      user.id
-    );
-
-    // Create relationships (with Secondary ↔ Secondary filtering and parent_of handling)
-    const { parentOfCreated, cyclesRejected } = await createRelationships(
-      supabase,
-      extractionResult.relationships,
-      nameToId,
-      articleId,
-      filteredEntities,
-      user.id
-    );
-
-    // Recalculate is_primary for entities that are children in parent_of relationships
-    const { updated: isPrimaryUpdated } = await recalculateIsPrimary(supabase, user.id);
-
-    // Create entity mentions
-    const entityIds = Array.from(nameToId.values());
-    await createEntityMentions(supabase, entityIds, articleId);
-
-    // Mark article as processed
-    await supabase
-      .from("articles")
-      .update({ processed_at: new Date().toISOString() })
-      .eq("id", articleId);
+    // Run extraction pipeline using shared utility
+    const result = await processArticleExtraction(supabase, articleId, user.id);
 
     return NextResponse.json({
       success: true,
-      data: {
-        outline: {
-          articleType: outline.article_type,
-          primaryFocus: outline.primary_focus,
-          topicCount: outline.main_topics.length,
-        },
-        entitiesExtracted: extractionResult.entities.length,
-        lowConfidenceRemoved,
-        relationshipsExtracted: extractionResult.relationships.length,
-        entitiesSaved: nameToId.size,
-        parentOfCreated,
-        cyclesRejected,
-        isPrimaryUpdated,
-      },
+      data: result,
     });
   } catch (error) {
     console.error("Extraction API error:", error);
+
+    // Handle specific error types
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const statusCode = errorMessage.includes("Article not found") ? 404 :
+                       errorMessage.includes("already processed") ? 409 : 500;
+
     return NextResponse.json(
       {
         error: "Failed to extract entities",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorMessage,
       },
-      { status: 500 }
+      { status: statusCode }
     );
   }
 }

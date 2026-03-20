@@ -59,20 +59,17 @@ export default function KnowledgeGraph() {
     fetchGraph();
   }, []);
 
-  // Filter nodes by active types only (sources don't filter, they highlight)
-  const filteredNodes = useMemo(() => {
+  // All nodes are always visible (type filter affects opacity, not visibility)
+  const allNodes = useMemo(() => {
     if (!graphData) return [];
-    return graphData.nodes.filter((node) => activeTypes.includes(node.type));
-  }, [graphData, activeTypes]);
+    return graphData.nodes;
+  }, [graphData]);
 
-  // Filter links to only include those between visible nodes
-  const filteredLinks = useMemo(() => {
+  // All links are always visible
+  const allLinks = useMemo(() => {
     if (!graphData) return [];
-    const visibleNodeIds = new Set(filteredNodes.map((n) => n.id));
-    return graphData.links.filter(
-      (link) => visibleNodeIds.has(link.source as string) && visibleNodeIds.has(link.target as string)
-    );
-  }, [graphData, filteredNodes]);
+    return graphData.links;
+  }, [graphData]);
 
   // Calculate highlighted nodes (selected + connected + source-highlighted)
   const highlightedNodeIds = useMemo(() => {
@@ -82,7 +79,7 @@ export default function KnowledgeGraph() {
     if (selectedNode) {
       ids.add(selectedNode.id);
 
-      filteredLinks.forEach((link) => {
+      allLinks.forEach((link) => {
         const sourceId =
           typeof link.source === "object"
             ? (link.source as { id: string }).id
@@ -104,7 +101,7 @@ export default function KnowledgeGraph() {
     const allSourcesSelected =
       highlightedSources.length === graphData?.availableSources.length;
     if (!allSourcesSelected && highlightedSources.length > 0) {
-      filteredNodes.forEach((node) => {
+      allNodes.forEach((node) => {
         if (node.sources.some((s) => highlightedSources.includes(s))) {
           ids.add(node.id);
         }
@@ -112,7 +109,7 @@ export default function KnowledgeGraph() {
     }
 
     return ids;
-  }, [selectedNode, filteredLinks, highlightedSources, graphData, filteredNodes]);
+  }, [selectedNode, allLinks, highlightedSources, graphData, allNodes]);
 
   const handleToggleType = useCallback((type: EntityType) => {
     setActiveTypes((prev) => {
@@ -152,12 +149,12 @@ export default function KnowledgeGraph() {
 
   const handleSelectNodeFromPanel = useCallback(
     (nodeId: string) => {
-      const node = filteredNodes.find((n) => n.id === nodeId);
+      const node = allNodes.find((n) => n.id === nodeId);
       if (node) {
         setSelectedNode(node);
       }
     },
-    [filteredNodes]
+    [allNodes]
   );
 
   if (loading) {
@@ -211,11 +208,12 @@ export default function KnowledgeGraph() {
           `}
         >
           <GraphCanvas
-            nodes={filteredNodes}
-            links={filteredLinks}
+            nodes={allNodes}
+            links={allLinks}
             maxDepth={graphData?.max_depth ?? 3}
             selectedNodeId={selectedNode?.id || null}
             highlightedNodeIds={highlightedNodeIds}
+            activeTypes={activeTypes}
             onNodeClick={handleNodeClick}
             onBackgroundClick={handleBackgroundClick}
           />
@@ -225,8 +223,8 @@ export default function KnowledgeGraph() {
         {selectedNode && (
           <NodePanel
             node={selectedNode}
-            links={filteredLinks}
-            allNodes={filteredNodes}
+            links={allLinks}
+            allNodes={allNodes}
             onClose={() => setSelectedNode(null)}
             onSelectNode={handleSelectNodeFromPanel}
           />
@@ -235,7 +233,7 @@ export default function KnowledgeGraph() {
 
       {/* Stats bar */}
       <div className="px-4 py-2 border-t border-border-subtle text-xs text-text-tertiary">
-        {filteredNodes.length} nodes · {filteredLinks.length} connections
+        {allNodes.length} nodes · {allLinks.length} connections
       </div>
     </div>
   );

@@ -4,3 +4,6 @@ export * from "./normalize";
 export * from "./deduplicate";
 export * from "./hierarchy";
 export * from "./truncate";
+export * from "./tree";
+export * from "./classify";
+export * from "./embeddings";

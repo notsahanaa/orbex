@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { PopularSubscriptions } from "@/components/ingestion/PopularSubscriptions";
+import { MySubscriptions } from "@/components/ingestion/MySubscriptions";
+import { PopularFeed } from "@/lib/data/popularFeeds";
 
 interface ArticleData {
   title: string;
@@ -29,7 +32,20 @@ interface PastArticle {
   created_at: string;
 }
 
+interface Subscription {
+  id: string;
+  name: string;
+  feed_url: string;
+  is_active: boolean;
+  last_polled_at: string | null;
+  error_count: number;
+  created_at: string;
+  article_count: number;
+  relevant_count: number;
+}
+
 type ProcessingStatus = "idle" | "fetching" | "saving" | "extracting" | "done" | "error";
+type TabType = "popular" | "my";
 
 function getRelativeTime(dateString: string): string {
   const date = new Date(dateString);
@@ -68,6 +84,19 @@ export default function ArticleIngest() {
   const [loadingArticles, setLoadingArticles] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Subscriptions state
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loadingSubscriptions, setLoadingSubscriptions] = useState(true);
+  const [showAddFeedModal, setShowAddFeedModal] = useState(false);
+  const [feedUrl, setFeedUrl] = useState("");
+  const [feedName, setFeedName] = useState("");
+  const [backfill, setBackfill] = useState<"none" | "last5" | "last10">("none");
+  const [addingFeed, setAddingFeed] = useState(false);
+  const [addFeedError, setAddFeedError] = useState<string | null>(null);
+
+  // Tab state - default to "popular" if no subscriptions, otherwise "my"
+  const [activeTab, setActiveTab] = useState<TabType | null>(null);
+
   const fetchArticles = useCallback(async () => {
     try {
       const response = await fetch("/api/articles");
@@ -82,9 +111,34 @@ export default function ArticleIngest() {
     }
   }, []);
 
+  const fetchSubscriptions = useCallback(async () => {
+    try {
+      const response = await fetch("/api/subscriptions");
+      const result = await response.json();
+      if (result.success) {
+        const subs = result.data.subscriptions;
+        setSubscriptions(subs);
+        // Set default tab based on subscriptions (only on initial load)
+        if (activeTab === null) {
+          setActiveTab(subs.length > 0 ? "my" : "popular");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch subscriptions:", err);
+    } finally {
+      setLoadingSubscriptions(false);
+    }
+  }, [activeTab]);
+
   useEffect(() => {
     fetchArticles();
-  }, [fetchArticles]);
+    fetchSubscriptions();
+  }, [fetchArticles, fetchSubscriptions]);
+
+  // Compute subscribed feed URLs for quick lookup
+  const subscribedFeedUrls = useMemo(() => {
+    return new Set(subscriptions.map((s) => s.feed_url));
+  }, [subscriptions]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,6 +241,65 @@ export default function ArticleIngest() {
     }
   };
 
+  const handleAddFeed = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddingFeed(true);
+    setAddFeedError(null);
+
+    try {
+      const response = await fetch("/api/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedUrl, name: feedName || undefined, backfill }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to add subscription");
+      }
+
+      // Reset form and close modal
+      setFeedUrl("");
+      setFeedName("");
+      setBackfill("none");
+      setShowAddFeedModal(false);
+
+      // Refresh subscriptions
+      fetchSubscriptions();
+    } catch (err) {
+      setAddFeedError(err instanceof Error ? err.message : "Failed to add subscription");
+    } finally {
+      setAddingFeed(false);
+    }
+  };
+
+  const handleSubscribePopularFeed = async (feed: PopularFeed) => {
+    try {
+      const response = await fetch("/api/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          feedUrl: feed.feedUrl,
+          name: feed.name,
+          backfill: "last25",
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to add subscription");
+      }
+
+      // Refresh subscriptions
+      fetchSubscriptions();
+    } catch (err) {
+      console.error("Failed to subscribe:", err);
+      alert(err instanceof Error ? err.message : "Failed to subscribe");
+    }
+  };
+
   const statusMessages: Record<ProcessingStatus, string> = {
     idle: "Ingest",
     fetching: "Fetching article...",
@@ -198,10 +311,158 @@ export default function ArticleIngest() {
 
   const isProcessing = ["fetching", "saving", "extracting"].includes(status);
 
+  // Show loading state while determining initial tab
+  if (activeTab === null) {
+    return (
+      <div className="space-y-6">
+        <div className="card p-6">
+          <div className="text-text-tertiary text-sm py-4">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Input Form */}
+      {/* Tabs Section */}
       <div className="card p-6">
+        {/* Tab Bar */}
+        <div className="flex gap-1 mb-6 border-b border-border-subtle">
+          <button
+            onClick={() => setActiveTab("popular")}
+            className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+              activeTab === "popular"
+                ? "text-text-primary"
+                : "text-text-tertiary hover:text-text-secondary"
+            }`}
+          >
+            Popular Subscriptions
+            {activeTab === "popular" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent-primary" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("my")}
+            className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+              activeTab === "my"
+                ? "text-text-primary"
+                : "text-text-tertiary hover:text-text-secondary"
+            }`}
+          >
+            My Subscriptions
+            {subscriptions.length > 0 && (
+              <span className="ml-2 text-xs text-text-tertiary">
+                ({subscriptions.length})
+              </span>
+            )}
+            {activeTab === "my" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent-primary" />
+            )}
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === "popular" ? (
+          <PopularSubscriptions
+            subscribedFeedUrls={subscribedFeedUrls}
+            onSubscribe={handleSubscribePopularFeed}
+          />
+        ) : (
+          <MySubscriptions
+            subscriptions={subscriptions}
+            loading={loadingSubscriptions}
+            onRefresh={fetchSubscriptions}
+            onAddFeed={() => setShowAddFeedModal(true)}
+          />
+        )}
+      </div>
+
+      {/* Add Feed Modal */}
+      {showAddFeedModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => !addingFeed && setShowAddFeedModal(false)}
+        >
+          <div
+            className="card p-6 max-w-lg w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-xl mb-4">Add RSS Feed</h2>
+            <form onSubmit={handleAddFeed} className="space-y-4">
+              <div>
+                <label className="text-sm text-text-secondary mb-2 block">
+                  Feed URL *
+                </label>
+                <input
+                  type="url"
+                  value={feedUrl}
+                  onChange={(e) => setFeedUrl(e.target.value)}
+                  placeholder="https://example.com/feed.xml"
+                  required
+                  disabled={addingFeed}
+                  className="input w-full"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-text-secondary mb-2 block">
+                  Name (optional)
+                </label>
+                <input
+                  type="text"
+                  value={feedName}
+                  onChange={(e) => setFeedName(e.target.value)}
+                  placeholder="Auto-populated from feed"
+                  disabled={addingFeed}
+                  className="input w-full"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-text-secondary mb-2 block">
+                  Backfill
+                </label>
+                <select
+                  value={backfill}
+                  onChange={(e) => setBackfill(e.target.value as "none" | "last5" | "last10")}
+                  disabled={addingFeed}
+                  className="input w-full"
+                >
+                  <option value="none">From now on</option>
+                  <option value="last5">Last 5 articles</option>
+                  <option value="last10">Last 10 articles</option>
+                </select>
+              </div>
+
+              {addFeedError && <div className="error-message">{addFeedError}</div>}
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowAddFeedModal(false)}
+                  disabled={addingFeed}
+                  className="btn text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addingFeed}
+                  className="btn btn-primary text-sm"
+                >
+                  {addingFeed ? "Adding..." : "Subscribe"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Article Input */}
+      <div className="card p-6">
+        <div className="text-text-tertiary text-xs uppercase tracking-wider mb-4">
+          Manual Article Input
+        </div>
         <form onSubmit={handleSubmit} className="flex gap-4">
           <input
             type="url"

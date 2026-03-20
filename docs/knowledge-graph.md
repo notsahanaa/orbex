@@ -315,3 +315,51 @@ This section tracks decisions made for MVP that we may want to upgrade later.
 - Threshold can be tuned based on observed quality
 
 **Upgrade Trigger:** If we see inconsistent confidence scores or quality issues with the 0.6 threshold
+
+### 6. Cross-Article Entity Linking Approach
+
+**Date:** 2026-03-13
+
+**Context:** The knowledge graph forms isolated clusters per article. Entities like "Claude Code" sit alone even though they should connect to "Claude", "AI agents", and "Anthropic" from other articles.
+
+**Options Evaluated:**
+
+| Approach | Cost | Quality | Complexity |
+|----------|------|---------|------------|
+| **A: LLM-Aware Extraction** | ~$0.035/article | High - LLM sees context | Medium |
+| **B: Post-Processing Merge** | ~$0.05/article | Medium - separate decisions | Lower |
+
+**Decision:** Approach A - Modify Pass 2 to include existing graph context
+- Single pass - LLM makes intelligent decisions while reading article
+- More efficient than extracting blind then merging
+- Uses vector similarity to find relevant existing entities (~25)
+- LLM outputs `matches_existing` and `parent_of` fields
+
+**Upgrade Trigger:** If extraction quality is poor or debugging is difficult, consider Approach B (separate merge pass).
+
+### 7. Embedding Provider for Semantic Search
+
+**Date:** 2026-03-13
+
+**Context:** Need embeddings to find semantically similar existing entities for cross-article linking.
+
+**Options Evaluated:**
+
+| Provider | Cost | Dimensions | Quality | Setup |
+|----------|------|------------|---------|-------|
+| **Local (all-MiniLM-L6-v2)** | Free | 384 | Good | None |
+| OpenAI text-embedding-3-small | $0.02/1M tokens | 1536 | Excellent | API key |
+| Voyage AI | $0.06/1M tokens | 1024 | Excellent | API key |
+
+**Decision:** Local embeddings via `@xenova/transformers`
+- No additional API key needed - user only has Anthropic API
+- Free to run (model downloads once, runs locally)
+- Good enough quality for finding similar entities
+- 384 dimensions keeps vector storage efficient
+
+**Upgrade Trigger:** If local embedding quality causes poor matches, or if adding an API key becomes acceptable.
+
+**Migration Note:** Switching to OpenAI later requires:
+1. Change vector column dimension (384 → 1536)
+2. Re-run backfill script for all entities
+3. Swap `generateEmbedding()` function to call OpenAI

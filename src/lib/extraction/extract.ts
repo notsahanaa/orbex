@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { ArticleOutline, ExtractionResult } from "./schema";
+import { ArticleOutline, ExtractionResult, DbEntity } from "./schema";
 
 const anthropic = new Anthropic();
 
@@ -199,20 +199,59 @@ CONFIDENCE REFLECTS DEPTH OF COVERAGE:
 - 0.7-0.8: Discussed with some detail
 - 0.5-0.6: Mentioned briefly but still a concrete, named entity (appropriate for tools/companies)
 
+CROSS-ARTICLE LINKING (if existing entities are provided):
+When existing entities from the knowledge graph are listed, you MUST check each entity you extract:
+
+1. **matches_existing**: If the entity you're extracting is THE SAME THING as an existing entity, set this to the existing entity's name.
+   - "Claude Code" in article matches existing "Claude Code" → matches_existing: "Claude Code"
+   - "GPT-4" in article matches existing "GPT-4 Turbo" → matches_existing: null (different versions)
+   - Only match if they are truly the same entity, not just related
+
+2. **parent_of**: If the entity you're extracting should be a PARENT of existing entities, list those entity names.
+   - Extracting "AI coding tools" when "Cursor" and "Claude Code" exist → parent_of: ["Cursor", "Claude Code"]
+   - Extracting "Anthropic" when "Claude" exists → parent_of: ["Claude"]
+   - Only use for clear hierarchical relationships (broader concept → specific instance)
+
+3. If neither applies, set matches_existing: null and parent_of: []
+
 Return valid JSON:
 {
   "entities": [
-    {"name": "string", "type": "paradigm|tool|company|case_study|event", "description": "Detailed 2-3 sentence description with a quote from the article", "confidence": number, "is_primary": boolean, "source_topic": "which outline topic this came from"}
+    {"name": "string", "type": "paradigm|tool|company|case_study|event", "description": "Detailed 2-3 sentence description with a quote from the article", "confidence": number, "is_primary": boolean, "source_topic": "which outline topic this came from", "matches_existing": "string|null", "parent_of": ["string"]}
   ],
   "relationships": [
     {"source_name": "string", "target_name": "string", "relationship_type": "string"}
   ]
 }`;
 
+/**
+ * Format existing entities for inclusion in the extraction prompt.
+ */
+function formatExistingEntitiesForPrompt(entities: DbEntity[]): string {
+  if (entities.length === 0) {
+    return "";
+  }
+
+  const formatted = entities
+    .map((e) => {
+      const desc = e.description ? ` - ${e.description.slice(0, 150)}` : "";
+      return `- ${e.name} (${e.type})${desc}`;
+    })
+    .join("\n");
+
+  return `
+EXISTING ENTITIES IN KNOWLEDGE GRAPH:
+The following entities already exist. Check if any entity you extract matches these or should be a parent of them.
+${formatted}
+
+`;
+}
+
 export async function extractEntities(
   articleContent: string,
   articleTitle: string,
-  outline?: ArticleOutline
+  outline?: ArticleOutline,
+  existingEntities?: DbEntity[]
 ): Promise<ExtractionResult> {
   // Build context from outline if available
   const outlineContext = outline
@@ -226,6 +265,11 @@ ${outline.main_topics.map((t) => `  - [${t.relevance}] ${t.topic}: ${t.key_point
 `
     : "";
 
+  // Build context from existing entities if available
+  const existingContext = existingEntities
+    ? formatExistingEntitiesForPrompt(existingEntities)
+    : "";
+
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 4096,
@@ -233,8 +277,7 @@ ${outline.main_topics.map((t) => `  - [${t.relevance}] ${t.topic}: ${t.key_point
       {
         role: "user",
         content: `${EXTRACTION_PROMPT}
-${outlineContext}
----
+${outlineContext}${existingContext}---
 
 **Article Title:** ${articleTitle}
 

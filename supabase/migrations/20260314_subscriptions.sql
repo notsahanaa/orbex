@@ -93,4 +93,26 @@ CREATE POLICY "Users can select own subscription_articles" ON subscription_artic
     )
   );
 
+-- Users can insert subscription_articles for their own subscriptions
+CREATE POLICY "Users can insert own subscription_articles" ON subscription_articles
+  FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM subscriptions s
+      WHERE s.id = subscription_id
+      AND s.user_id = auth.uid()
+    )
+  );
+
+-- Users can update subscription_articles for their own subscriptions
+CREATE POLICY "Users can update own subscription_articles" ON subscription_articles
+  FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM subscriptions s
+      WHERE s.id = subscription_id
+      AND s.user_id = auth.uid()
+    )
+  );
+
 -- Service role bypasses RLS entirely (no policy needed for service role access)

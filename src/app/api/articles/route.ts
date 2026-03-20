@@ -54,9 +54,19 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      console.error("Error saving article:", error);
+      console.error("Error saving article:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
       return NextResponse.json(
-        { error: "Failed to save article" },
+        {
+          error: "Failed to save article",
+          details: error.message,
+          code: error.code,
+          hint: error.hint,
+        },
         { status: 500 }
       );
     }
@@ -66,9 +76,11 @@ export async function POST(request: NextRequest) {
       data: { id: article.id, isNew: true },
     });
   } catch (error) {
-    console.error("Articles API error:", error);
+    console.error("Articles POST error:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Stack trace:", error instanceof Error ? error.stack : "N/A");
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Internal server error", details: message },
       { status: 500 }
     );
   }

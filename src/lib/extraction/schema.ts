@@ -51,6 +51,9 @@ export const ExtractedEntity = z.object({
   confidence: z.number().min(0).max(1).describe("Confidence score 0-1"),
   is_primary: z.boolean().describe("True for paradigm/tool/company, false for case_study/event"),
   source_topic: z.string().optional().describe("Which outline topic this entity came from"),
+  // Cross-article linking fields
+  matches_existing: z.string().nullable().optional().describe("Name of existing entity this matches (for merging)"),
+  parent_of: z.array(z.string()).optional().describe("Names of existing entities this should be parent of"),
 });
 
 export type ExtractedEntity = z.infer<typeof ExtractedEntity>;
@@ -108,7 +111,41 @@ export interface DbArticle {
   byline: string | null;
   site_name: string | null;
   content: string;
+  summary: string | null;
+  embedding: number[] | null;
   processed_at: string | null;
   created_at: string;
   user_id: string;
+}
+
+// ============================================
+// Paradigm Classification Schema
+// ============================================
+
+export const NewParadigmProposal = z.object({
+  name: z.string().describe("Name of the new paradigm to create"),
+  description: z.string().describe("Brief description of the paradigm"),
+  parent_id: z.string().nullable().describe("ID of the parent paradigm (null for new root)"),
+  parent_name: z.string().nullable().describe("Name of the parent paradigm (for reference)"),
+});
+
+export type NewParadigmProposal = z.infer<typeof NewParadigmProposal>;
+
+export const ClassificationResult = z.object({
+  matched_paradigms: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    confidence: z.number().min(0).max(1),
+  })).describe("Existing paradigms that match this article"),
+  new_paradigm: NewParadigmProposal.nullable().describe("Proposed new paradigm if none match well"),
+  reasoning: z.string().describe("Brief explanation of the classification decision"),
+});
+
+export type ClassificationResult = z.infer<typeof ClassificationResult>;
+
+// Simplified paradigm node for tree representation in prompts
+export interface ParadigmNodeForPrompt {
+  id: string;
+  name: string;
+  children: ParadigmNodeForPrompt[];
 }

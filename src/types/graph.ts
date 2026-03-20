@@ -68,10 +68,11 @@ export const ENTITY_LABELS: Record<EntityType, string> = {
  * Root nodes (depth 0) are largest, deeper nodes are progressively smaller.
  */
 export function getNodeSize(node: GraphNode, maxDepth: number = 3): number {
-  const baseSize = 6;
+  const baseSize = 4; // Smaller base size for better spacing
   // Depth-based: roots are larger, deeper nodes are smaller
-  const depthMultiplier = Math.pow(1.5, Math.max(0, maxDepth - node.hierarchy_depth));
+  const depthMultiplier = Math.pow(1.3, Math.max(0, maxDepth - node.hierarchy_depth));
   // Gentle mention scaling
   const mentionScale = 1 + Math.log10(Math.max(1, node.mention_count)) * 0.3;
-  return baseSize * depthMultiplier * mentionScale;
+  // Cap the max size to prevent oversized nodes
+  return Math.min(baseSize * depthMultiplier * mentionScale, 15);
 }

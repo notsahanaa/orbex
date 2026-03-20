@@ -33,9 +33,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate backfill option
-    if (backfill && !["none", "last5", "last10"].includes(backfill)) {
+    if (backfill && !["none", "last5", "last10", "last25"].includes(backfill)) {
       return NextResponse.json(
-        { error: "backfill must be 'none', 'last5', or 'last10'" },
+        { error: "backfill must be 'none', 'last5', 'last10', or 'last25'" },
         { status: 400 }
       );
     }
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (backfillOption !== "none") {
-      const limit = backfillOption === "last5" ? 5 : 10;
+      const limit = backfillOption === "last5" ? 5 : backfillOption === "last10" ? 10 : 25;
       const itemsToBackfill = feed.items.slice(0, limit);
 
       for (const item of itemsToBackfill) {

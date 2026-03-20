@@ -29,6 +29,12 @@ export default async function DashboardPage() {
               >
                 Graph
               </Link>
+              <Link
+                href="/ask"
+                className="text-text-tertiary hover:text-text-secondary"
+              >
+                Ask
+              </Link>
             </div>
           </div>
           <div className="flex items-center gap-6">

@@ -9,11 +9,12 @@ import {
 } from "@/lib/extraction/deduplicate";
 import { recalculateIsPrimary } from "@/lib/extraction/hierarchy";
 import { smartTruncate } from "@/lib/extraction/truncate";
-import { getContextEntities } from "@/lib/extraction/embeddings";
+import { getContextEntities, generateEmbedding } from "@/lib/extraction/embeddings";
 import {
   classifyArticle,
   shouldCreateNewParadigm,
   getBestMatchingParadigms,
+  extractParadigmsFromOutline,
 } from "@/lib/extraction/classify";
 import {
   getParadigmTree,
@@ -22,7 +23,32 @@ import {
   attachEntityToParadigm,
   getParadigmDepth,
 } from "@/lib/extraction/tree";
-import { ClassificationResult, DbEntity } from "@/lib/extraction/schema";
+import { ClassificationResult, DbEntity, ArticleOutline } from "@/lib/extraction/schema";
+
+/**
+ * Generate a concise summary from the article outline.
+ * This summary is used for the Ask feature's RAG pipeline.
+ */
+function generateSummaryFromOutline(
+  title: string,
+  outline: ArticleOutline
+): string {
+  // Build summary from outline components
+  const focus = outline.primary_focus;
+  const highRelevanceTopics = outline.main_topics
+    .filter((t) => t.relevance === "high")
+    .map((t) => t.topic);
+
+  const topicsList =
+    highRelevanceTopics.length > 0
+      ? highRelevanceTopics.slice(0, 3).join(", ")
+      : outline.main_topics
+          .slice(0, 3)
+          .map((t) => t.topic)
+          .join(", ");
+
+  return `${title}. This ${outline.article_type.replace("_", " ")} article focuses on ${focus}, covering ${topicsList}.`;
+}
 
 export interface ExtractionResult {
   outline: {
@@ -121,7 +147,7 @@ export async function processArticleExtraction(
   let classifiedParadigmIds: string[] = [];
 
   if (paradigmTree.nodeCount > 0) {
-    // Only classify if we have a paradigm tree
+    // Existing tree: classify article into it
     try {
       classification = await classifyArticle(outline, paradigmTree);
 
@@ -142,6 +168,48 @@ export async function processArticleExtraction(
       }
     } catch (err) {
       console.log("Classification failed, falling back to embedding search:", err);
+      // Fall through to embedding-based context retrieval
+    }
+  } else {
+    // COLD START: No paradigm tree exists yet
+    // Extract initial paradigm structure from this article
+    console.log("Cold start: Creating initial paradigm tree from article");
+
+    try {
+      const coldStartParadigms = await extractParadigmsFromOutline(outline);
+
+      // Create L1 paradigm (organization only - no entities attach here)
+      const l1 = await createParadigm(
+        supabase,
+        coldStartParadigms.l1.name,
+        coldStartParadigms.l1.description,
+        userId,
+        undefined // No parent - this is a root
+      );
+      console.log(`Created L1 paradigm: ${l1.name} (${l1.id})`);
+
+      // Create L2 paradigms under L1 (entities will attach to these)
+      for (const l2Proposal of coldStartParadigms.l2_paradigms) {
+        const l2 = await createParadigm(
+          supabase,
+          l2Proposal.name,
+          l2Proposal.description,
+          userId,
+          l1.id // Parent is L1
+        );
+        console.log(`Created L2 paradigm: ${l2.name} (${l2.id}) under ${l1.name}`);
+        classifiedParadigmIds.push(l2.id);
+      }
+
+      // Record the first L2 as the "new paradigm created" for result reporting
+      if (classifiedParadigmIds.length > 0) {
+        newParadigmCreated = {
+          id: classifiedParadigmIds[0],
+          name: coldStartParadigms.l2_paradigms[0].name,
+        } as DbEntity;
+      }
+    } catch (err) {
+      console.error("Cold start paradigm extraction failed:", err);
       // Fall through to embedding-based context retrieval
     }
   }
@@ -277,10 +345,18 @@ export async function processArticleExtraction(
   const entityIds = Array.from(nameToId.values());
   await createEntityMentions(supabase, entityIds, articleId);
 
-  // Mark article as processed
+  // Generate article summary and embedding for Ask feature
+  const summary = generateSummaryFromOutline(article.title, outline);
+  const summaryEmbedding = await generateEmbedding(`${article.title}: ${summary}`);
+
+  // Mark article as processed and save summary + embedding
   await supabase
     .from("articles")
-    .update({ processed_at: new Date().toISOString() })
+    .update({
+      processed_at: new Date().toISOString(),
+      summary,
+      embedding: summaryEmbedding,
+    })
     .eq("id", articleId);
 
   return {
